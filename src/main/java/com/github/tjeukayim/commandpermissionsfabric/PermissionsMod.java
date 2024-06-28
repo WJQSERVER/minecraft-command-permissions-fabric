@@ -1,18 +1,20 @@
 package com.github.tjeukayim.commandpermissionsfabric;
 
-import com.mojang.brigadier.StringReader;
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.tree.CommandNode;
 import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.command.CommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.command.EntitySelector;
 import net.minecraft.command.EntitySelectorReader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import com.mojang.brigadier.StringReader;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
+import java.lang.reflect.Field;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -48,24 +50,31 @@ public class PermissionsMod implements ModInitializer {
             return;
         }
         try {
-            var field = CommandNode.class.getDeclaredField("requirement");
+            Field field = CommandNode.class.getDeclaredField("requirement");
             field.setAccessible(true);
             Predicate<ServerCommandSource> original = child.getRequirement();
-            field.set(child, original.or((source) -> checkPermissionWithSelectorSupport(source, PREFIX + name)));
+            field.set(child, original.or((source) -> checkPermissionWithSelector(source, PREFIX + name)));
         } catch (NoSuchFieldException | IllegalAccessException e) {
-            LOGGER.warn("Failed to alter field CommandNode.requirement " + name, e);
+            LOGGER.warn("Failed to alter field CommandNode.requirement for command " + name, e);
         }
     }
 
-    private boolean checkPermissionWithSelectorSupport(ServerCommandSource source, String permission) {
-        try {
-            List<ServerPlayerEntity> players = getPlayersFromSelector(source, permission);
-            return players.stream().anyMatch(player -> Permissions.check(player.getCommandSource(), permission, false));
-        } catch (IllegalArgumentException e) {
+    private boolean checkPermissionWithSelector(ServerCommandSource source, String permission) {
+        // 检查是否权限字符串中包含选择器
+        if (permission.contains("@")) {
+            try {
+                EntitySelector selector = new EntitySelectorReader(new StringReader(permission)).read();
+                List<ServerPlayerEntity> players = selector.getPlayers(source);
+                return players.stream().anyMatch(player -> Permissions.check(player.getCommandSource(), PREFIX + player.getName().getString(), false));
+            } catch (CommandSyntaxException e) {
+                LOGGER.warn("Failed to parse selector in permission: " + permission, e);
+                return false;
+            }
+        } else {
             return Permissions.check(source, permission, false);
         }
     }
-    
+
     private String commandPackageName(CommandNode<ServerCommandSource> node) {
         var command = node.getCommand();
         if (command != null) {
@@ -82,19 +91,5 @@ public class PermissionsMod implements ModInitializer {
             }
         }
         return null;
-    }
-
-    public static List<ServerPlayerEntity> getPlayersFromSelector(ServerCommandSource source, String selectorString) {
-        try {
-            EntitySelectorReader reader = new EntitySelectorReader(new StringReader(selectorString));
-            EntitySelector selector = reader.read();
-            return selector.getPlayers(source);
-        } catch (CommandSyntaxException e) {
-            LOGGER.warn("解析选择器时发生语法错误: {}", selectorString, e);
-            return List.of();
-        } catch (IllegalArgumentException e) {
-            LOGGER.warn("提供的选择器字符串格式不正确: {}", selectorString, e);
-            return List.of();
-        }
     }
 }
