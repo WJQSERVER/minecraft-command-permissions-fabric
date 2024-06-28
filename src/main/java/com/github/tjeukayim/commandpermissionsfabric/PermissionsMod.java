@@ -5,16 +5,19 @@ import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.command.EntitySelector;
+import net.minecraft.command.EntitySelectorReader;
+import net.minecraft.text.Text;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.StringReader;
+import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class PermissionsMod implements ModInitializer {
-    /**
-     * Permission string prefix compatible with other modding frameworks.
-     */
     public static final String PREFIX = "minecraft.command.";
     private static final Logger LOGGER = LogManager.getLogger();
 
@@ -48,15 +51,24 @@ public class PermissionsMod implements ModInitializer {
             var field = CommandNode.class.getDeclaredField("requirement");
             field.setAccessible(true);
             Predicate<ServerCommandSource> original = child.getRequirement();
-            // 修改部分开始
-            field.set(child, original.or((source) -> Permissions.check(source, PREFIX + name, false)
-                    || Permissions.check(source, "minecraft.command.selector", false))); // 新增的权限检查
-            // 修改部分结束
+            // 使用新权限检查逻辑
+            field.set(child, original.or((source) -> checkPermissionWithSelectorSupport(source, PREFIX + name)));
         } catch (NoSuchFieldException | IllegalAccessException e) {
             LOGGER.warn("Failed to alter field CommandNode.requirement " + name, e);
         }
     }
 
+    // 使用选择器支持的权限检查逻辑
+    private boolean checkPermissionWithSelectorSupport(ServerCommandSource source, String permission) {
+        try {
+            List<ServerPlayerEntity> players = getPlayersFromSelector(source, permission);
+            return players.stream().anyMatch(player -> Permissions.check(player.getCommandSource(), permission, false));
+        } catch (IllegalArgumentException e) {
+            // 当输入不符合选择器格式时，回退到常规权限检查
+            return Permissions.check(source, permission, false);
+        }
+    }
+    
     private String commandPackageName(CommandNode<ServerCommandSource> node) {
         var command = node.getCommand();
         if (command != null) {
@@ -73,5 +85,15 @@ public class PermissionsMod implements ModInitializer {
             }
         }
         return null;
+    }
+    
+    // 解析玩家选择器，并返回匹配的玩家列表
+    public static List<ServerPlayerEntity> getPlayersFromSelector(ServerCommandSource source, String selectorString) throws IllegalArgumentException {
+        if (!selectorString.startsWith("@")) {
+            throw new IllegalArgumentException("输入字符串不是玩家选择器");
+        }
+        EntitySelectorReader reader = new EntitySelectorReader(new StringReader(selectorString));
+        EntitySelector selector = reader.read();
+        return selector.getPlayers(source);
     }
 }
