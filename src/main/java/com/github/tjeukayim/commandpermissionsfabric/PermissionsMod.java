@@ -1,5 +1,7 @@
 package com.github.tjeukayim.commandpermissionsfabric;
 
+import com.mojang.brigadier.StringReader;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.tree.CommandNode;
 import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.api.ModInitializer;
@@ -8,12 +10,9 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.command.EntitySelector;
 import net.minecraft.command.EntitySelectorReader;
-import net.minecraft.text.Text;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-//import java.io.StringReader;
-import com.mojang.brigadier.StringReader;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -52,20 +51,17 @@ public class PermissionsMod implements ModInitializer {
             var field = CommandNode.class.getDeclaredField("requirement");
             field.setAccessible(true);
             Predicate<ServerCommandSource> original = child.getRequirement();
-            // 使用新权限检查逻辑
             field.set(child, original.or((source) -> checkPermissionWithSelectorSupport(source, PREFIX + name)));
         } catch (NoSuchFieldException | IllegalAccessException e) {
             LOGGER.warn("Failed to alter field CommandNode.requirement " + name, e);
         }
     }
 
-    // 使用选择器支持的权限检查逻辑
     private boolean checkPermissionWithSelectorSupport(ServerCommandSource source, String permission) {
         try {
             List<ServerPlayerEntity> players = getPlayersFromSelector(source, permission);
             return players.stream().anyMatch(player -> Permissions.check(player.getCommandSource(), permission, false));
         } catch (IllegalArgumentException e) {
-            // 当输入不符合选择器格式时，回退到常规权限检查
             return Permissions.check(source, permission, false);
         }
     }
@@ -87,14 +83,18 @@ public class PermissionsMod implements ModInitializer {
         }
         return null;
     }
-    
-    // 解析玩家选择器，并返回匹配的玩家列表
-    public static List<ServerPlayerEntity> getPlayersFromSelector(ServerCommandSource source, String selectorString) throws IllegalArgumentException {
-        if (!selectorString.startsWith("@")) {
-            throw new IllegalArgumentException("输入字符串不是玩家选择器");
+
+    public static List<ServerPlayerEntity> getPlayersFromSelector(ServerCommandSource source, String selectorString) {
+        try {
+            EntitySelectorReader reader = new EntitySelectorReader(new StringReader(selectorString));
+            EntitySelector selector = reader.read();
+            return selector.getPlayers(source);
+        } catch (CommandSyntaxException e) {
+            LOGGER.warn("解析选择器时发生语法错误: {}", selectorString, e);
+            return List.of();
+        } catch (IllegalArgumentException e) {
+            LOGGER.warn("提供的选择器字符串格式不正确: {}", selectorString, e);
+            return List.of();
         }
-        EntitySelectorReader reader = new EntitySelectorReader(new StringReader(selectorString));
-        EntitySelector selector = reader.read();
-        return selector.getPlayers(source);
     }
 }
