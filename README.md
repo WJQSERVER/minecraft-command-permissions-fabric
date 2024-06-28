@@ -1,6 +1,6 @@
 # Minecraft Command Permissions Fabric
 
-A mod to add permission checks for built-in Minecraft commands.
+A mod to add permission checks for built-in Minecraft commands
 
 * Download from the [releases](https://github.com/lucko/minecraft-command-permissions-fabric/releases) tab.
 * You also need to have a permissions mod installed. (e.g. [LuckPerms](https://luckperms.net))
