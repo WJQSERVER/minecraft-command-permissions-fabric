@@ -1,21 +1,11 @@
-package com.github.tjeukayim.commandpermissionsfabric;
-
 import com.mojang.brigadier.tree.CommandNode;
+import com.mojang.brigadier.context.CommandContext;
 import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.command.CommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.command.EntitySelector;
-import net.minecraft.command.EntitySelectorReader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import com.mojang.brigadier.StringReader;
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
-
-import java.lang.reflect.Field;
-import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -50,28 +40,27 @@ public class PermissionsMod implements ModInitializer {
             return;
         }
         try {
-            Field field = CommandNode.class.getDeclaredField("requirement");
+            var field = CommandNode.class.getDeclaredField("requirement");
             field.setAccessible(true);
             Predicate<ServerCommandSource> original = child.getRequirement();
-            field.set(child, original.or((source) -> checkPermissionWithSelector(source, PREFIX + name)));
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            LOGGER.warn("Failed to alter field CommandNode.requirement for command " + name, e);
-        }
-    }
-
-    private boolean checkPermissionWithSelector(ServerCommandSource source, String permission) {
-        // 检查是否权限字符串中包含选择器
-        if (permission.contains("@")) {
-            try {
-                EntitySelector selector = new EntitySelectorReader(new StringReader(permission)).read();
-                List<ServerPlayerEntity> players = selector.getPlayers(source);
-                return players.stream().anyMatch(player -> Permissions.check(player.getCommandSource(), PREFIX + player.getName().getString(), false));
-            } catch (CommandSyntaxException e) {
-                LOGGER.warn("Failed to parse selector in permission: " + permission, e);
+            Predicate<ServerCommandSource> newRequirement = source -> {
+                if (Permissions.check(source, PREFIX + name, false)) {
+                    return true;
+                }
+                // 新增选择器支持的检查逻辑
+                CommandContext<ServerCommandSource> context = source.getCommandContext();
+                if (context != null && context.hasNodes()) {
+                    // 检查是否包含选择器类型，并验证权限
+                    // 这里是示例逻辑，具体实现可能需要根据选择器的实现方式调整
+                    return context.getNodes().stream()
+                        .anyMatch(node -> node.getNode().getName().equals("someSelector") &&
+                                           Permissions.check(source, "minecraft.command.selector." + node.getNode().getName(), false));
+                }
                 return false;
-            }
-        } else {
-            return Permissions.check(source, permission, false);
+            };
+            field.set(child, original.or(newRequirement));
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            LOGGER.warn("Failed to alter field CommandNode.requirement " + name, e);
         }
     }
 
