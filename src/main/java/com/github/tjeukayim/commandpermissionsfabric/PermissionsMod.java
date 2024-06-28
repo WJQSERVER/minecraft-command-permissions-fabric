@@ -48,7 +48,10 @@ public class PermissionsMod implements ModInitializer {
             var field = CommandNode.class.getDeclaredField("requirement");
             field.setAccessible(true);
             Predicate<ServerCommandSource> original = child.getRequirement();
-            field.set(child, original.or((source) -> Permissions.check(source, PREFIX + name, false)));
+            // 修改部分开始
+            field.set(child, original.or((source) -> Permissions.check(source, PREFIX + name, false)
+                    || Permissions.check(source, "minecraft.command.selector", false))); // 新增的权限检查
+            // 修改部分结束
         } catch (NoSuchFieldException | IllegalAccessException e) {
             LOGGER.warn("Failed to alter field CommandNode.requirement " + name, e);
         }
