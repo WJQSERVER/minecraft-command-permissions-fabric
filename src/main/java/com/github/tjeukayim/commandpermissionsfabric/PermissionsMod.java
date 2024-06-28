@@ -12,7 +12,8 @@ import net.minecraft.text.Text;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.StringReader;
+//import java.io.StringReader;
+import com.mojang.brigadier.StringReader;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
